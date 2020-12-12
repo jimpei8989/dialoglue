@@ -13,7 +13,8 @@ DATA_DIR="data/MULTIWOZ2.1"
 
 # Project paths etc. ----------------------------------------------
 
-OUT_DIR=multiwoz_trippy/
+OUT_DIR="multiwoz_trippy/"
+mkdir -p ${OUT_DIR}
 
 # Main ------------------------------------------------------------
 

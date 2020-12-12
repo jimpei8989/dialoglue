@@ -7,13 +7,8 @@ import random
 import torch
 
 from typing import Any
-from typing import Dict
-from typing import TextIO
 from typing import Tuple
 
-from collections import Counter, defaultdict
-from sklearn.metrics import f1_score
-from sklearn.preprocessing import MultiLabelBinarizer
 from tokenizers import BertWordPieceTokenizer
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -21,7 +16,6 @@ from tqdm import tqdm
 from tqdm import trange
 from transformers import AdamW
 
-from constants import SPECIAL_TOKENS
 from data_readers import IntentDataset, SlotDataset, TOPDataset
 from bert_models import (
     BertPretrain,
@@ -29,6 +23,12 @@ from bert_models import (
     JointSlotIntentBertModel,
     SlotBertModel,
 )
+
+DATASET_MAPPER = {
+    'intent': IntentDataset,
+    'slot': SlotDataset,
+    'top': TOPDataset
+}
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -43,11 +43,13 @@ def read_args():
     parser.add_argument("--train_data_path", type=str)
     parser.add_argument("--test_data_path", type=str)
     parser.add_argument("--val_data_path", type=str, default="")
-    parser.add_argument("--mlm_data_path", type=str, default="")
+    parser.add_argument("--mlm_pre_data_path", type=str, default="")
+    parser.add_argument("--mlm_during_data_path", type=str, default="")
     parser.add_argument("--token_vocab_path", type=str)
     parser.add_argument("--output_dir", type=str, default="")
     parser.add_argument("--model_name_or_path", type=str, default="bert-base-uncased")
     parser.add_argument("--task", type=str, choices=["intent", "slot", "top"])
+    parser.add_argument("--mlm_pre_task", type=str, choices=["intent", "slot", "top"])
     parser.add_argument("--dump_outputs", action="store_true")
     parser.add_argument("--mlm_pre", action="store_true")
     parser.add_argument("--mlm_during", action="store_true")
@@ -92,7 +94,7 @@ def evaluate(
     model.eval()
     pred = []
     true = []
-    for batch in tqdm(eval_dataloader, desc="Evaluating"):
+    for batch in tqdm(eval_dataloader, desc="Evaluating", leave=False):
         with torch.no_grad():
             # Move to GPU
             if torch.cuda.is_available():
@@ -185,8 +187,8 @@ def evaluate(
 
                 # Only unmasked
                 pad_ind = batch["attention_mask"].tolist()[0].index(0)
-                actual_gold_slots = actual_gold_slots[1 : pad_ind - 1]
-                actual_predicted_slots = actual_predicted_slots[1 : pad_ind - 1]
+                actual_gold_slots = actual_gold_slots[1:pad_ind - 1]
+                actual_predicted_slots = actual_predicted_slots[1:pad_ind - 1]
 
                 # Add to lists
                 pred.append(
@@ -301,11 +303,19 @@ def evaluate(
 
 
 def mask_tokens(inputs, tokenizer, mlm_probability=0.15):
-    """ Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original. """
+    """
+    Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10%
+    original.
+    """
+
     labels = inputs.clone()
-    # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
+    # We sample a few tokens in each sequence for masked-LM training (with probability
+    # args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
     probability_matrix = torch.full(labels.shape, mlm_probability)
-    # special_tokens_mask = [tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val in labels.tolist()]
+    # special_tokens_mask = [
+    #   # for val in labels.tolist()
+    #   tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True)
+    # ]
     probability_matrix.masked_fill_(torch.eq(labels, 0).cpu(), value=0.0)
 
     masked_indices = torch.bernoulli(probability_matrix).bool()
@@ -377,25 +387,20 @@ def train(args, rep):
         tokenizer.save(args.output_dir + "/tokenizer.bin")
 
     # Data readers
-    if args.task == "intent":
-        dataset_initializer = IntentDataset
-    elif args.task == "slot":
-        dataset_initializer = SlotDataset
-    elif args.task == "top":
-        dataset_initializer = TOPDataset
-    else:
-        raise ValueError("Not a valid task type: {}".format(args.task))
+    dataset_initializer = DATASET_MAPPER[args.task]
+    mlm_pre_dataset_initializer = DATASET_MAPPER[args.mlm_pre_task]
 
     train_dataset = dataset_initializer(
         args.train_data_path, tokenizer, args.max_seq_length, token_vocab_name
     )
 
-    if args.mlm_data_path != "":
-        mlm_dataset = dataset_initializer(
-            args.mlm_data_path, tokenizer, args.max_seq_length, token_vocab_name
-        )
-    else:
-        mlm_dataset = train_dataset
+    mlm_pre_dataset = mlm_pre_dataset_initializer(
+        args.mlm_pre_data_path, tokenizer, args.max_seq_length, token_vocab_name
+    ) if args.mlm_pre_data_path else train_dataset
+
+    mlm_during_dataset = dataset_initializer(
+        args.mlm_during_data_path, tokenizer, args.max_seq_length, token_vocab_name
+    ) if args.mlm_during_data_path else train_dataset
 
     val_dataset = (
         dataset_initializer(args.val_data_path, tokenizer, 512, token_vocab_name)
@@ -415,8 +420,15 @@ def train(args, rep):
         pin_memory=True,
     )
 
-    mlm_dataloader = DataLoader(
-        dataset=mlm_dataset,
+    mlm_pre_dataloader = DataLoader(
+        dataset=mlm_pre_dataset,
+        batch_size=args.train_batch_size,
+        shuffle=True,
+        pin_memory=True,
+    )
+
+    mlm_during_dataloader = DataLoader(
+        dataset=mlm_during_dataset,
         batch_size=args.train_batch_size,
         shuffle=True,
         pin_memory=True,
@@ -472,7 +484,7 @@ def train(args, rep):
             pre_model.train()
             epoch_loss = 0
             num_batches = 0
-            for batch in tqdm(mlm_dataloader):
+            for batch in tqdm(mlm_pre_dataloader, leave=False):
                 num_batches += 1
 
                 # Train model
@@ -514,7 +526,7 @@ def train(args, rep):
         epoch_loss = 0
         num_batches = 0
 
-        for batch in tqdm(train_dataloader):
+        for batch in tqdm(train_dataloader, leave=False):
             num_batches += 1
             global_step += 1
 
@@ -616,7 +628,7 @@ def train(args, rep):
             pre_model.train()
             epoch_loss = 0
             num_batches = 0
-            for batch in tqdm(mlm_dataloader):
+            for batch in tqdm(mlm_during_dataloader, leave=False):
                 num_batches += 1
 
                 # Train model
