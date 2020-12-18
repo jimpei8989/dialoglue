@@ -5,9 +5,7 @@ data_utils/dialoglue/
 __pycache__/
 
 bert-base-uncased-vocab.txt
-bert-dg/
-convbert/
-convbert-dg/
+berts
 
 checkpoints/
 

@@ -24,11 +24,7 @@ from bert_models import (
     SlotBertModel,
 )
 
-DATASET_MAPPER = {
-    'intent': IntentDataset,
-    'slot': SlotDataset,
-    'top': TOPDataset
-}
+DATASET_MAPPER = {"intent": IntentDataset, "slot": SlotDataset, "top": TOPDataset}
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -75,9 +71,7 @@ def read_args():
         "--weight_decay", default=0.0, type=float, help="Weight decay if we apply some."
     )
     parser.add_argument("--device", default=0, type=int, help="GPU device #")
-    parser.add_argument(
-        "--max_grad_norm", default=-1.0, type=float, help="Max gradient norm."
-    )
+    parser.add_argument("--max_grad_norm", default=-1.0, type=float, help="Max gradient norm.")
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -132,17 +126,13 @@ def evaluate(
 
                 # Generate words, true slots and pred slots
                 words = [tokenizer.decode([e]) for e in batch["input_ids"][0].tolist()]
-                actual_gold_slots = (
-                    batch["slot_labels"].cpu().numpy().squeeze().tolist()
-                )
+                actual_gold_slots = batch["slot_labels"].cpu().numpy().squeeze().tolist()
                 true_slots = [
-                    eval_dataloader.dataset.slot_idx_to_label[s]
-                    for s in actual_gold_slots
+                    eval_dataloader.dataset.slot_idx_to_label[s] for s in actual_gold_slots
                 ]
                 actual_predicted_slots = slot_preds.squeeze().tolist()
                 pred_slots = [
-                    eval_dataloader.dataset.slot_idx_to_label[s]
-                    for s in actual_predicted_slots
+                    eval_dataloader.dataset.slot_idx_to_label[s] for s in actual_predicted_slots
                 ]
 
                 # Find the last turn and only include that. Irrelevant for restaurant8k/dstc8-sgd.
@@ -154,12 +144,8 @@ def evaluate(
 
                 # Filter out words that are padding
                 filt_words = [w for w in words if w not in ["", "user"]]
-                true_slots = [
-                    s for w, s in zip(words, true_slots) if w not in ["", "user"]
-                ]
-                pred_slots = [
-                    s for w, s in zip(words, pred_slots) if w not in ["", "user"]
-                ]
+                true_slots = [s for w, s in zip(words, true_slots) if w not in ["", "user"]]
+                pred_slots = [s for w, s in zip(words, pred_slots) if w not in ["", "user"]]
 
                 # Convert to slot labels
                 pred.append(pred_slots)
@@ -181,14 +167,12 @@ def evaluate(
                 slot_preds = torch.argmax(slot_logits, dim=2).detach().cpu().numpy()
                 actual_predicted_slots = slot_preds.squeeze().tolist()
                 intent_true = batch["intent_label"].cpu().tolist()
-                actual_gold_slots = (
-                    batch["slot_labels"].cpu().numpy().squeeze().tolist()
-                )
+                actual_gold_slots = batch["slot_labels"].cpu().numpy().squeeze().tolist()
 
                 # Only unmasked
                 pad_ind = batch["attention_mask"].tolist()[0].index(0)
-                actual_gold_slots = actual_gold_slots[1:pad_ind - 1]
-                actual_predicted_slots = actual_predicted_slots[1:pad_ind - 1]
+                actual_gold_slots = actual_gold_slots[1 : pad_ind - 1]
+                actual_predicted_slots = actual_predicted_slots[1 : pad_ind - 1]
 
                 # Add to lists
                 pred.append(
@@ -242,9 +226,7 @@ def evaluate(
     # Perform evaluation
     if task == "intent":
         if args.dump_outputs:
-            pred_labels = [
-                eval_dataloader.dataset.intent_idx_to_label.get(p) for p in pred
-            ]
+            pred_labels = [eval_dataloader.dataset.intent_idx_to_label.get(p) for p in pred]
             json.dump(pred_labels, open(args.output_dir + "outputs.json", "w+"))
 
         return sum(p == t for p, t in zip(pred, true)) / len(pred)
@@ -262,9 +244,7 @@ def evaluate(
             predictions_for_slot = [
                 [p for p in prediction if slot_type in p] for prediction in pred_slots
             ]
-            labels_for_slot = [
-                [l for l in label if slot_type in l] for label in true_slots
-            ]
+            labels_for_slot = [[l for l in label if slot_type in l] for label in true_slots]
 
             proposal_made = [len(p) > 0 for p in predictions_for_slot]
             has_label = [len(l) > 0 for l in labels_for_slot]
@@ -322,20 +302,14 @@ def mask_tokens(inputs, tokenizer, mlm_probability=0.15):
     labels[~masked_indices] = -1  # We only compute loss on masked tokens
 
     # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-    indices_replaced = (
-        torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
-    )
+    indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
     inputs[indices_replaced] = tokenizer.token_to_id("[MASK]")
 
     # 10% of the time, we replace masked input tokens with random word
     indices_random = (
-        torch.bernoulli(torch.full(labels.shape, 0.5)).bool()
-        & masked_indices
-        & ~indices_replaced
+        torch.bernoulli(torch.full(labels.shape, 0.5)).bool() & masked_indices & ~indices_replaced
     )
-    random_words = torch.randint(
-        tokenizer.get_vocab_size(), labels.shape, dtype=torch.long
-    )
+    random_words = torch.randint(tokenizer.get_vocab_size(), labels.shape, dtype=torch.long)
     inputs[indices_random] = random_words[indices_random].cuda()
 
     # The rest of the time (10% of the time) we keep the masked input tokens unchanged
@@ -352,9 +326,7 @@ def train(args, rep):
     if args.output_dir == "":
         cwd = os.getcwd()
         base = args.model_name_or_path.split("/")[-1]
-        data_path = "_" + "_".join(args.train_data_path.split("/")[-2:]).replace(
-            ".csv", ""
-        )
+        data_path = "_" + "_".join(args.train_data_path.split("/")[-2:]).replace(".csv", "")
         mlm_pre = "_mlmpre" if args.mlm_pre else ""
         mlm_dur = "_mlmdur" if args.mlm_during else ""
         name = base + data_path + mlm_pre + mlm_dur + "_v{}".format(rep)
@@ -378,9 +350,7 @@ def train(args, rep):
 
     # Configure tokenizer
     token_vocab_name = os.path.basename(args.token_vocab_path).replace(".txt", "")
-    tokenizer = BertWordPieceTokenizer(
-        args.token_vocab_path, lowercase=args.do_lowercase
-    )
+    tokenizer = BertWordPieceTokenizer(args.token_vocab_path, lowercase=args.do_lowercase)
     # tokenizer.enable_padding(max_length=args.max_seq_length)
 
     if args.num_epochs > 0:
@@ -394,13 +364,21 @@ def train(args, rep):
         args.train_data_path, tokenizer, args.max_seq_length, token_vocab_name
     )
 
-    mlm_pre_dataset = mlm_pre_dataset_initializer(
-        args.mlm_pre_data_path, tokenizer, args.max_seq_length, token_vocab_name
-    ) if args.mlm_pre_data_path else train_dataset
+    mlm_pre_dataset = (
+        mlm_pre_dataset_initializer(
+            args.mlm_pre_data_path, tokenizer, args.max_seq_length, token_vocab_name
+        )
+        if args.mlm_pre_data_path
+        else train_dataset
+    )
 
-    mlm_during_dataset = dataset_initializer(
-        args.mlm_during_data_path, tokenizer, args.max_seq_length, token_vocab_name
-    ) if args.mlm_during_data_path else train_dataset
+    mlm_during_dataset = (
+        dataset_initializer(
+            args.mlm_during_data_path, tokenizer, args.max_seq_length, token_vocab_name
+        )
+        if args.mlm_during_data_path
+        else train_dataset
+    )
 
     val_dataset = (
         dataset_initializer(args.val_data_path, tokenizer, 512, token_vocab_name)
@@ -408,9 +386,7 @@ def train(args, rep):
         else None
     )
 
-    test_dataset = dataset_initializer(
-        args.test_data_path, tokenizer, 512, token_vocab_name
-    )
+    test_dataset = dataset_initializer(args.test_data_path, tokenizer, 512, token_vocab_name)
 
     # Data loaders
     train_dataloader = DataLoader(
@@ -435,9 +411,7 @@ def train(args, rep):
     )
 
     val_dataloader = (
-        DataLoader(dataset=val_dataset, batch_size=1, pin_memory=True)
-        if val_dataset
-        else None
+        DataLoader(dataset=val_dataset, batch_size=1, pin_memory=True) if val_dataset else None
     )
 
     test_dataloader = DataLoader(dataset=test_dataset, batch_size=1, pin_memory=True)
@@ -471,9 +445,7 @@ def train(args, rep):
     # Initialize MLM model
     if args.mlm_pre or args.mlm_during:
         pre_model = BertPretrain(args.model_name_or_path)
-        mlm_optimizer = AdamW(
-            pre_model.parameters(), lr=args.learning_rate, eps=args.adam_epsilon
-        )
+        mlm_optimizer = AdamW(pre_model.parameters(), lr=args.learning_rate, eps=args.adam_epsilon)
         if torch.cuda.is_available():
             pre_model.to(args.device)
 
@@ -491,9 +463,7 @@ def train(args, rep):
                 if "input_ids" in batch:
                     inputs, labels = mask_tokens(batch["input_ids"].cuda(), tokenizer)
                 else:
-                    inputs, labels = mask_tokens(
-                        batch["ctx_input_ids"].cuda(), tokenizer
-                    )
+                    inputs, labels = mask_tokens(batch["ctx_input_ids"].cuda(), tokenizer)
 
                 loss = pre_model(inputs, labels)
                 if args.grad_accum > 1:
@@ -503,9 +473,7 @@ def train(args, rep):
 
                 if args.grad_accum <= 1 or num_batches % args.grad_accum == 0:
                     if args.max_grad_norm > 0:
-                        torch.nn.utils.clip_grad_norm_(
-                            pre_model.parameters(), args.max_grad_norm
-                        )
+                        torch.nn.utils.clip_grad_norm_(pre_model.parameters(), args.max_grad_norm)
 
                     mlm_optimizer.step()
                     pre_model.zero_grad()
@@ -580,9 +548,7 @@ def train(args, rep):
 
             if args.grad_accum <= 1 or num_batches % args.grad_accum == 0:
                 if args.max_grad_norm > 0:
-                    torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), args.max_grad_norm
-                    )
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
                 optimizer.step()
                 model.zero_grad()
@@ -607,13 +573,9 @@ def train(args, rep):
             patience = 0
 
         if score > best_score:
-            LOGGER.info(
-                "New best results found for {}! Score: {}".format(args.task, score)
-            )
+            LOGGER.info("New best results found for {}! Score: {}".format(args.task, score))
             torch.save(model.state_dict(), os.path.join(args.output_dir, "model.pt"))
-            torch.save(
-                optimizer.state_dict(), os.path.join(args.output_dir, "optimizer.pt")
-            )
+            torch.save(optimizer.state_dict(), os.path.join(args.output_dir, "optimizer.pt"))
             best_score = score
 
         for name, val in metrics_to_log.items():
@@ -635,9 +597,7 @@ def train(args, rep):
                 if "input_ids" in batch:
                     inputs, labels = mask_tokens(batch["input_ids"].cuda(), tokenizer)
                 else:
-                    inputs, labels = mask_tokens(
-                        batch["ctx_input_ids"].cuda(), tokenizer
-                    )
+                    inputs, labels = mask_tokens(batch["ctx_input_ids"].cuda(), tokenizer)
 
                 loss = pre_model(inputs, labels)
 
@@ -649,9 +609,7 @@ def train(args, rep):
 
                 if args.grad_accum <= 1 or num_batches % args.grad_accum == 0:
                     if args.max_grad_norm > 0:
-                        torch.nn.utils.clip_grad_norm_(
-                            pre_model.parameters(), args.max_grad_norm
-                        )
+                        torch.nn.utils.clip_grad_norm_(pre_model.parameters(), args.max_grad_norm)
 
                     mlm_optimizer.step()
                     pre_model.zero_grad()
