@@ -594,11 +594,9 @@ def load_and_cache_examples(args, model, tokenizer, processor, evaluate=False):
 
     # Load data features from cache or dataset file
     cached_file = os.path.join(
-        os.path.dirname(args.output_dir),
+        args.data_cache_dir,
         "cached_{}_features".format(
-            args.predict_type
-            if evaluate
-            else ("train_few" if "few" in args.output_dir else "train")
+            args.predict_type if evaluate else ("train_few" if args.few_shot else "train")
         ),
     )
     if os.path.exists(cached_file) and not args.overwrite_cache:  # and not output_examples:
@@ -749,6 +747,8 @@ def main():
         required=True,
         help="The output directory where the model checkpoints and predictions will be written.",
     )
+
+    parser.add_argument("--data_cache_dir", default="data_caches")
 
     # Other parameters
     parser.add_argument(

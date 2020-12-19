@@ -9,18 +9,20 @@
 #TASK="woz2"
 #DATA_DIR="data/woz2"
 TASK="multiwoz21"
-DATA_DIR="data/multiwoz/MULTIWOZ2.1"
+DATA_DIR="data/multiwoz/MULTIWOZ2.1_fewshot"
 
 # Project paths etc. ----------------------------------------------
 
 if [[ $# -ne 0 ]]; then
 	BERT_MODEL=$1
+	MODEL_NAME_OR_PATH="berts/${BERT_MODEL}"
 else
-	BERT_MODEL="convbert-dg"
+	BERT_MODEL="bert-base-uncased"
+	MODEL_NAME_OR_PATH="bert-base-uncased"
 fi
 echo $BERT_MODEL
 
-OUT_DIR="multiwoz_trippy_${BERT_MODEL}/"
+OUT_DIR="outputs/multiwoz_trippy_${BERT_MODEL}_mlm_fewshot/"
 mkdir -p ${OUT_DIR}
 
 # Main ------------------------------------------------------------
@@ -38,7 +40,7 @@ for step in train dev test; do
 	    --data_dir=${DATA_DIR} \
 	    --dataset_config=dataset_config/${TASK}.json \
 	    --model_type="bert" \
-	    --model_name_or_path="../berts/${BERT_MODEL}" \
+	    --model_name_or_path="${MODEL_NAME_OR_PATH}" \
 	    --do_lower_case \
 	    --learning_rate=1e-4 \
 	    --num_train_epochs=50 \
@@ -60,6 +62,7 @@ for step in train dev test; do
 	    --class_aux_feats_ds \
 	    --seed 42 \
 	    --mlm_pre --mlm_during \
+        --few_shot \
 	    ${args_add} \
         2>&1 | tee ${OUT_DIR}/${step}.log
 
