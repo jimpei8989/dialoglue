@@ -476,8 +476,9 @@ def load_and_cache_examples(args, model, tokenizer, processor, evaluate=False):
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     # Load data features from cache or dataset file
-    cached_file = os.path.join(os.path.dirname(args.output_dir), 'cached_{}_features'.format(
-        args.predict_type if evaluate else ('train_few' if 'few' in args.output_dir else 'train')))
+    cached_file = os.path.join(args.data_cache_dir, 'cached_{}_features'.format(
+        args.predict_type if evaluate else ('train_few' if args.few_shot else 'train')))
+
     if os.path.exists(cached_file) and not args.overwrite_cache: # and not output_examples:
         logger.info("Loading features from cached file %s", cached_file)
         features = torch.load(cached_file)
@@ -547,7 +548,7 @@ def mask_tokens(inputs, tokenizer, mlm_probability=0.15):
     # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
     probability_matrix = torch.full(labels.shape, mlm_probability)
     #special_tokens_mask = [tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val in labels.tolist()]
-    probability_matrix.masked_fill_(torch.tensor(labels == 0, dtype=torch.bool), value=0.0)
+    probability_matrix.masked_fill_(torch.eq(labels, 0).cpu(), value=0.0)
 
     masked_indices = torch.bernoulli(probability_matrix).bool()
     labels[~masked_indices] = -1  # We only compute loss on masked tokens
@@ -572,6 +573,8 @@ def main():
                         help="Name of the task (e.g., multiwoz21).")
     parser.add_argument("--data_dir", default=None, type=str, required=True,
                         help="Task database.")
+    parser.add_argument("--data_cache_dir", type=str, default="data_cache",
+                        help="Task database (cached).")
     parser.add_argument("--dataset_config", default=None, type=str, required=True,
                         help="Dataset configuration file.")
     parser.add_argument("--predict_type", default=None, type=str, required=True,
